@@ -1,0 +1,19 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: false
+
+  Hakam\AiLogInspectorBundle\:
+    resource: '../../*'
+    exclude: '../../{DependencyInjection,Resources,Tests}'
+
+  # Console Command
+  Hakam\AiLogInspectorBundle\Command\LogInspectorCommand:
+    tags: [ 'console.command' ]
+
+  # Event Listeners for automatic log indexing
+  Hakam\AiLogInspectorBundle\EventListener\LogIndexingListener:
+    tags:
+      - { name: 'kernel.event_listener', event: 'kernel.terminate' }
+      - { name: 'kernel.event_listener', event: 'console.terminate' }

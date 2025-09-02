@@ -1,0 +1,6 @@
+/vendor/
+/.claude/
+.idea/
+/CLAUDE.md
+/.phpunit.result.cache
+
