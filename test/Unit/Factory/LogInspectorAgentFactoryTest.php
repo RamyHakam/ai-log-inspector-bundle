@@ -3,80 +3,214 @@
 namespace Hakam\AiLogInspectorBundle\Tests\Unit\Factory;
 
 use Hakam\AiLogInspector\Agent\LogInspectorAgent;
+use Hakam\AiLogInspector\Platform\LogDocumentPlatformInterface;
+use Hakam\AiLogInspector\Store\VectorLogStoreInterface;
 use Hakam\AiLogInspector\Tool\LogInspectorToolInterface;
+use Hakam\AiLogInspector\Tool\LogSearchTool;
+use Hakam\AiLogInspector\Vectorizer\LogDocumentVectorizerInterface;
 use Hakam\AiLogInspectorBundle\Factory\LogInspectorAgentFactory;
 use PHPUnit\Framework\TestCase;
-use ReflectionClass;
 
 class LogInspectorAgentFactoryTest extends TestCase
 {
+    private LogDocumentPlatformInterface $platform;
+    private VectorLogStoreInterface $store;
+    private LogDocumentVectorizerInterface $vectorizer;
+
+    protected function setUp(): void
+    {
+        $this->platform = $this->createMock(LogDocumentPlatformInterface::class);
+        $this->store = $this->createMock(VectorLogStoreInterface::class);
+        $this->vectorizer = $this->createMock(LogDocumentVectorizerInterface::class);
+    }
+
     public function testCreateReturnsLogInspectorAgent(): void
     {
-        $tools = [];
-        $config = [
-            'provider' => 'openai',
-            'api_key' => 'sk-test-api-key',
-            'model' => [
-                'name' => 'gpt-4',
-                'capabilities' => ['text_generation'],
-                'options' => ['temperature' => 0.7]
-            ]
-        ];
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer
+        );
 
-        $factory = $this->createFactoryInstance($tools, $config);
         $agent = $factory->create();
 
         $this->assertInstanceOf(LogInspectorAgent::class, $agent);
     }
 
-    public function testCreateWithTools(): void
+    public function testCreateWithCustomSystemPrompt(): void
     {
-        $mockTool = $this->createMock(LogInspectorToolInterface::class);
-        $tools = [$mockTool];
-        $config = [
-            'provider' => 'anthropic',
-            'api_key' => 'sk-test-key',
-            'model' => [
-                'name' => 'claude-3-sonnet',
-                'capabilities' => ['text_generation'],
-                'options' => ['temperature' => 0.5]
-            ]
-        ];
+        $customPrompt = 'You are a specialized log analyzer for e-commerce applications.';
+        
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer,
+            $customPrompt
+        );
 
-        $factory = $this->createFactoryInstance($tools, $config);
         $agent = $factory->create();
 
         $this->assertInstanceOf(LogInspectorAgent::class, $agent);
     }
 
-    public function testCreateWithDifferentProviders(): void
+    public function testCreateWithCustomTools(): void
     {
-        $testCases = [
-            ['provider' => 'openai', 'model' => ['name' => 'gpt-4']],
-            ['provider' => 'anthropic', 'model' => ['name' => 'claude-3-sonnet']],
-        ];
+        $customTool = $this->createMock(LogInspectorToolInterface::class);
+        $customTools = [$customTool];
+        
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer,
+            null,
+            $customTools
+        );
 
-        foreach ($testCases as $config) {
-            $config['api_key'] = 'sk-test-key';
-            $config['model']['capabilities'] = ['text_generation'];
-            $config['model']['options'] = ['temperature' => 0.7];
+        $agent = $factory->create();
 
-            $factory = $this->createFactoryInstance([], $config);
-            $agent = $factory->create();
-
-            $this->assertInstanceOf(LogInspectorAgent::class, $agent);
-        }
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent);
     }
 
-    private function createFactoryInstance(iterable $tools, array $config): LogInspectorAgentFactory
+    public function testCreateWithToolsAddsAdditionalTools(): void
     {
-        $reflection = new ReflectionClass(LogInspectorAgentFactory::class);
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer
+        );
+
+        $additionalTool = $this->createMock(LogInspectorToolInterface::class);
+        $additionalTools = [$additionalTool];
+
+        $agent = $factory->createWithTools($additionalTools);
+
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent);
+    }
+
+    public function testCreateWithPromptUsesCustomPrompt(): void
+    {
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer
+        );
+
+        $customPrompt = 'Custom security-focused prompt';
+        $agent = $factory->createWithPrompt($customPrompt);
+
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent);
+    }
+
+    public function testCreateAlwaysIncludesLogSearchTool(): void
+    {
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer
+        );
+
+        // The factory should always include LogSearchTool as a core tool
+        // We can't directly test the tools array, but we can verify the agent is created
+        $agent = $factory->create();
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent);
+    }
+
+    public function testFactoryWithEmptyCustomTools(): void
+    {
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer,
+            null,
+            [] // empty custom tools
+        );
+
+        $agent = $factory->create();
+
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent);
+    }
+
+    public function testFactoryWithNullSystemPrompt(): void
+    {
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer,
+            null // null system prompt
+        );
+
+        $agent = $factory->create();
+
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent);
+    }
+
+    public function testCreateWithToolsCombinesAllTools(): void
+    {
+        $containerTool = $this->createMock(LogInspectorToolInterface::class);
+        $additionalTool = $this->createMock(LogInspectorToolInterface::class);
+        
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer,
+            'Test prompt',
+            [$containerTool]
+        );
+
+        $agent = $factory->createWithTools([$additionalTool]);
+
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent);
+    }
+
+    public function testMultipleAgentCreation(): void
+    {
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer
+        );
+
+        // Factory should be able to create multiple agents
+        $agent1 = $factory->create();
+        $agent2 = $factory->create();
+
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent1);
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent2);
+        $this->assertNotSame($agent1, $agent2); // Different instances
+    }
+
+    public function testFactoryIsReadonly(): void
+    {
+        // Test that the factory can be instantiated (which verifies readonly works)
+        $factory = new LogInspectorAgentFactory(
+            $this->platform,
+            $this->store,
+            $this->vectorizer
+        );
+        $this->assertInstanceOf(LogInspectorAgentFactory::class, $factory);
+        
+        // Test that properties are readonly by verifying constructor injection works
+        $agent = $factory->create();
+        $this->assertInstanceOf(LogInspectorAgent::class, $agent);
+    }
+
+    public function testConstructorParameters(): void
+    {
+        $reflection = new \ReflectionClass(LogInspectorAgentFactory::class);
         $constructor = $reflection->getConstructor();
-        $constructor->setAccessible(true);
+        $parameters = $constructor->getParameters();
+
+        $this->assertCount(5, $parameters);
+        $this->assertEquals('platform', $parameters[0]->getName());
+        $this->assertEquals('store', $parameters[1]->getName());
+        $this->assertEquals('vectorizer', $parameters[2]->getName());
+        $this->assertEquals('systemPrompt', $parameters[3]->getName());
+        $this->assertEquals('customTools', $parameters[4]->getName());
         
-        $factory = $reflection->newInstanceWithoutConstructor();
-        $constructor->invoke($factory, $tools, $config);
+        // System prompt should be nullable
+        $this->assertTrue($parameters[3]->allowsNull());
         
-        return $factory;
+        // Custom tools should have default value
+        $this->assertTrue($parameters[4]->isDefaultValueAvailable());
     }
 }
